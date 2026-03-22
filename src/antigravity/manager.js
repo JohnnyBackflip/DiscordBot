@@ -269,6 +269,35 @@ class AntigravityManager {
   }
 
   /**
+   * Debug: dump the DOM structure of the agent panel.
+   */
+  async dumpPanelDOM(instanceName) {
+    const conn = await this.getConnection(instanceName);
+    const { client } = conn;
+
+    return await this._evaluate(client, `
+      (() => {
+        const panel = document.querySelector('.antigravity-agent-side-panel');
+        if (!panel) return 'NO PANEL FOUND (.antigravity-agent-side-panel)';
+
+        const lines = [];
+        const walk = (el, d) => {
+          if (d > 5) return;
+          const cls = (el.className || '').toString().substring(0, 150);
+          const tag = el.tagName;
+          const ch = el.children.length;
+          const txtLen = (el.textContent || '').length;
+          const pad = '  '.repeat(d);
+          lines.push(pad + tag + ' .' + cls + ' [' + ch + 'ch, ' + txtLen + 'txt]');
+          for (let i = 0; i < Math.min(ch, 8); i++) walk(el.children[i], d + 1);
+        };
+        walk(panel, 0);
+        return lines.join('\\n');
+      })()
+    `);
+  }
+
+  /**
    * Get connection status for all registered instances.
    */
   getStatus() {
