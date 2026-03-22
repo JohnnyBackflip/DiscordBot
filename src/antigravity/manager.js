@@ -155,9 +155,10 @@ class AntigravityManager {
           const textbox = inputBox.querySelector('[role="textbox"]');
           if (!textbox) return 'ERROR:Chat textbox not found inside agent panel.';
 
-          // Focus and clear
+          // Focus and clear (use textContent to avoid Trusted Types CSP)
           textbox.focus();
-          textbox.innerHTML = '';
+          textbox.textContent = '';
+          while (textbox.firstChild) textbox.removeChild(textbox.firstChild);
 
           // Set the message
           textbox.textContent = ${escapedMessage};
