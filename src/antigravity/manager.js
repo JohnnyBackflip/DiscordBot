@@ -1,4 +1,5 @@
 const CDP = require('chrome-remote-interface');
+const http = require('http');
 const { stmts } = require('../database/db');
 
 /**
@@ -6,28 +7,29 @@ const { stmts } = require('../database/db');
  */
 class AntigravityManager {
   constructor() {
-    /** @type {Map<string, {client: any, host: string, port: number, targetId: string}>} */
+    /** @type {Map<string, {client: any, host: string, port: number}>} */
     this.connections = new Map();
   }
 
   /**
-   * Find the correct workbench target from available CDP targets.
+   * Fetch CDP targets via HTTP and find the workbench target.
    */
-  async _findWorkbenchTarget(host, port) {
-    const targets = await CDP.List({ host, port });
-    // Look for the main workbench page (not the Launchpad or workers)
-    const workbench = targets.find(t =>
-      t.type === 'page' &&
-      t.url?.includes('workbench.html') &&
-      !t.url?.includes('workbench-jetski')
-    );
-    if (workbench) return workbench.id;
-
-    // Fallback: first page target that isn't a worker
-    const firstPage = targets.find(t => t.type === 'page');
-    if (firstPage) return firstPage.id;
-
-    throw new Error('No suitable Antigravity workbench target found. Is a workspace open?');
+  _fetchTargets(host, port) {
+    return new Promise((resolve, reject) => {
+      http.get(`http://${host}:${port}/json`, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new Error('Failed to parse CDP targets'));
+          }
+        });
+      }).on('error', (err) => {
+        reject(new Error(`Cannot reach CDP at ${host}:${port}: ${err.message}`));
+      });
+    });
   }
 
   /**
@@ -38,25 +40,44 @@ class AntigravityManager {
     if (!instance) throw new Error(`Instance "${instanceName}" not found in database.`);
 
     try {
-      // Find the correct target (workbench, not launchpad)
-      const targetId = await this._findWorkbenchTarget(instance.host, instance.port);
+      // Find the correct workbench target via HTTP
+      const targets = await this._fetchTargets(instance.host, instance.port);
+      const workbench = targets.find(t =>
+        t.type === 'page' &&
+        t.url?.includes('workbench.html') &&
+        !t.url?.includes('jetski')
+      ) || targets.find(t => t.type === 'page');
 
-      const client = await CDP({ host: instance.host, port: instance.port, target: targetId });
+      if (!workbench) {
+        throw new Error('No Antigravity workbench target found. Is a workspace open?');
+      }
+
+      // Connect using callback pattern wrapped in promise
+      const client = await new Promise((resolve, reject) => {
+        CDP({
+          host: instance.host,
+          port: instance.port,
+          target: workbench.id,
+        }, (cdpClient) => {
+          resolve(cdpClient);
+        }).on('error', (err) => {
+          reject(err);
+        });
+      });
+
       await client.Runtime.enable();
-      await client.DOM.enable();
 
       this.connections.set(instanceName, {
         client,
         host: instance.host,
         port: instance.port,
-        targetId,
       });
 
-      console.log(`[CDP] Connected to instance "${instanceName}" at ${instance.host}:${instance.port} (target: ${targetId})`);
+      console.log(`[CDP] Connected to "${instanceName}" at ${instance.host}:${instance.port} (${workbench.title})`);
       return true;
     } catch (err) {
       console.error(`[CDP] Failed to connect to "${instanceName}":`, err.message);
-      throw new Error(`Could not connect to Antigravity instance "${instanceName}" at ${instance.host}:${instance.port}. Is it running with --remote-debugging-port=${instance.port}?`);
+      throw new Error(`Could not connect to Antigravity instance "${instanceName}" at ${instance.host}:${instance.port}. ${err.message}`);
     }
   }
 
@@ -66,9 +87,7 @@ class AntigravityManager {
   async disconnect(instanceName) {
     const conn = this.connections.get(instanceName);
     if (conn) {
-      try {
-        await conn.client.close();
-      } catch (_) { /* ignore */ }
+      try { await conn.client.close(); } catch (_) {}
       this.connections.delete(instanceName);
       console.log(`[CDP] Disconnected from "${instanceName}"`);
     }
@@ -101,8 +120,24 @@ class AntigravityManager {
   }
 
   /**
+   * Helper to evaluate JS in the Antigravity window and return the result as a string.
+   */
+  async _evaluate(client, expression) {
+    const result = await client.Runtime.evaluate({
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+
+    if (result.exceptionDetails) {
+      throw new Error(result.exceptionDetails.text || 'JS evaluation error');
+    }
+
+    return result.result.value;
+  }
+
+  /**
    * Send a message to an Antigravity instance and wait for the response.
-   * Uses CDP Runtime.evaluate to interact with the Antigravity Agent chat UI.
    */
   async sendMessage(instanceName, message, model = null) {
     const conn = await this.getConnection(instanceName);
@@ -110,68 +145,69 @@ class AntigravityManager {
 
     try {
       // Inject the message into the Antigravity Agent chat input
-      // The chat input is a contenteditable div[role="textbox"] inside #antigravity\\.agentSidePanelInputBox
-      const injectResult = await client.Runtime.evaluate({
-        expression: `
-          (async () => {
-            // Find the chat input: contenteditable div with role="textbox" inside the agent panel
-            const inputBox = document.getElementById('antigravity.agentSidePanelInputBox');
-            if (!inputBox) return JSON.stringify({ error: 'Agent panel input box not found. Is the Agent panel open? (Ctrl+Alt+B)' });
+      const escapedMessage = JSON.stringify(message);
 
-            const textbox = inputBox.querySelector('[role="textbox"]');
-            if (!textbox) return JSON.stringify({ error: 'Chat textbox not found inside agent panel.' });
+      const injectResult = await this._evaluate(client, `
+        (async () => {
+          const inputBox = document.getElementById('antigravity.agentSidePanelInputBox');
+          if (!inputBox) return 'ERROR:Agent panel input box not found. Is the Agent panel open? (Ctrl+Alt+B)';
 
-            // Focus the textbox
-            textbox.focus();
+          const textbox = inputBox.querySelector('[role="textbox"]');
+          if (!textbox) return 'ERROR:Chat textbox not found inside agent panel.';
 
-            // Clear existing content
-            textbox.innerHTML = '';
+          // Focus and clear
+          textbox.focus();
+          textbox.innerHTML = '';
 
-            // Set the message text
-            textbox.textContent = ${JSON.stringify(message)};
+          // Set the message
+          textbox.textContent = ${escapedMessage};
 
-            // Dispatch input event to trigger React/state updates
-            textbox.dispatchEvent(new Event('input', { bubbles: true }));
-            textbox.dispatchEvent(new Event('change', { bubbles: true }));
+          // Trigger input events
+          textbox.dispatchEvent(new Event('input', { bubbles: true }));
+          textbox.dispatchEvent(new Event('change', { bubbles: true }));
 
-            // Small delay to let the UI process
-            await new Promise(r => setTimeout(r, 300));
+          await new Promise(r => setTimeout(r, 300));
 
-            // Find the send button inside the agent panel input area
-            const sendBtn = inputBox.querySelector('button[aria-label*="Send" i], button[aria-label*="send" i]')
-              || inputBox.querySelector('button:last-of-type')
-              || inputBox.parentElement?.querySelector('button[aria-label*="Send" i], button[aria-label*="send" i]');
-
-            if (sendBtn) {
-              sendBtn.click();
-              return JSON.stringify({ success: true, method: 'button' });
+          // Try to find and click the send button
+          const btns = inputBox.querySelectorAll('button');
+          let sendBtn = null;
+          for (const btn of btns) {
+            const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+            if (label.includes('send') || label.includes('submit')) {
+              sendBtn = btn;
+              break;
             }
+          }
 
-            // Fallback: simulate Enter key on the textbox
-            textbox.dispatchEvent(new KeyboardEvent('keydown', {
-              key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true
-            }));
-            textbox.dispatchEvent(new KeyboardEvent('keyup', {
-              key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true
-            }));
-            return JSON.stringify({ success: true, method: 'enter' });
-          })()
-        `,
-        awaitPromise: true,
-        returnByValue: true,
-      });
+          // Fallback: look for a button with a send icon (typically the last button)
+          if (!sendBtn && btns.length > 0) {
+            sendBtn = btns[btns.length - 1];
+          }
 
-      const injectData = JSON.parse(injectResult.result.value || '{}');
-      if (injectData.error) {
-        throw new Error(injectData.error);
+          if (sendBtn) {
+            sendBtn.click();
+            return 'OK:button';
+          }
+
+          // Fallback: Enter key
+          textbox.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true
+          }));
+          return 'OK:enter';
+        })()
+      `);
+
+      if (typeof injectResult === 'string' && injectResult.startsWith('ERROR:')) {
+        throw new Error(injectResult.substring(6));
       }
 
-      // Wait for and capture the response
+      console.log(`[CDP] Message sent to "${instanceName}" via ${injectResult}`);
+
+      // Wait for the response
       const response = await this._waitForResponse(client);
       return response;
 
     } catch (err) {
-      // If connection was lost, remove from pool
       if (err.message?.includes('not connected') || err.message?.includes('ECONNREFUSED')) {
         this.connections.delete(instanceName);
       }
@@ -180,81 +216,51 @@ class AntigravityManager {
   }
 
   /**
-   * Poll the DOM for a new AI response in the Antigravity agent panel.
+   * Poll the DOM for a new AI response.
    */
   async _waitForResponse(client, timeoutMs = 120000, pollIntervalMs = 2000) {
     const startTime = Date.now();
 
-    // Get the count of existing response messages first
-    const initialCount = await client.Runtime.evaluate({
-      expression: `
-        (() => {
-          const panel = document.querySelector('.antigravity-agent-side-panel');
-          if (!panel) return 0;
-          // Count all assistant/response message blocks
-          const msgs = panel.querySelectorAll(
-            '[class*="assistant"], [class*="response"], [class*="message-block"], ' +
-            '[data-role="assistant"], [class*="agent-message"]'
-          );
-          return msgs.length;
-        })()
-      `,
-      returnByValue: true,
-    });
-
-    const initialMessageCount = initialCount.result.value || 0;
+    // Count existing messages
+    const initialMessageCount = await this._evaluate(client, `
+      (() => {
+        const panel = document.querySelector('.antigravity-agent-side-panel');
+        if (!panel) return 0;
+        return panel.querySelectorAll('[class*="prose"], [class*="markdown"], [class*="message"]').length;
+      })()
+    `) || 0;
 
     while (Date.now() - startTime < timeoutMs) {
       await new Promise(r => setTimeout(r, pollIntervalMs));
 
-      const result = await client.Runtime.evaluate({
-        expression: `
-          (() => {
-            const panel = document.querySelector('.antigravity-agent-side-panel');
-            if (!panel) return JSON.stringify({ done: false, reason: 'panel not found' });
+      const result = await this._evaluate(client, `
+        (() => {
+          const panel = document.querySelector('.antigravity-agent-side-panel');
+          if (!panel) return 'WAITING:panel not found';
 
-            // Find all message blocks in the conversation
-            const msgs = panel.querySelectorAll(
-              '[class*="assistant"], [class*="response"], [class*="message-block"], ' +
-              '[data-role="assistant"], [class*="agent-message"]'
-            );
+          const msgs = panel.querySelectorAll('[class*="prose"], [class*="markdown"], [class*="message"]');
+          if (msgs.length <= ${initialMessageCount}) return 'WAITING:no new message';
 
-            if (msgs.length <= ${initialMessageCount}) {
-              // Try alternative: just grab all prose/markdown rendered content
-              const proseBlocks = panel.querySelectorAll('[class*="prose"], [class*="markdown"], [class*="rendered"]');
-              if (proseBlocks.length <= ${initialMessageCount}) {
-                return JSON.stringify({ done: false, reason: 'no new messages yet' });
-              }
-              const lastBlock = proseBlocks[proseBlocks.length - 1];
-              const text = lastBlock.innerText || lastBlock.textContent || '';
+          const lastMsg = msgs[msgs.length - 1];
+          const text = (lastMsg.innerText || lastMsg.textContent || '').trim();
+          if (!text) return 'WAITING:empty message';
 
-              // Check if still streaming
-              const isStreaming = !!panel.querySelector(
-                '[class*="typing"], [class*="streaming"], [class*="loading"], ' +
-                '[class*="cursor"], [class*="spinner"], [class*="generating"]'
-              );
+          // Check if still generating
+          const isStreaming = !!panel.querySelector(
+            '[class*="typing"], [class*="streaming"], [class*="loading"], ' +
+            '[class*="spinner"], [class*="generating"], [class*="cursor-blink"]'
+          );
 
-              return JSON.stringify({ done: !isStreaming && text.length > 0, text: text.trim() });
-            }
+          if (isStreaming) return 'WAITING:still streaming';
+          return 'DONE:' + text;
+        })()
+      `);
 
-            const lastMsg = msgs[msgs.length - 1];
-            const text = lastMsg.innerText || lastMsg.textContent || '';
-
-            // Check if still streaming
-            const isStreaming = !!panel.querySelector(
-              '[class*="typing"], [class*="streaming"], [class*="loading"], ' +
-              '[class*="cursor"], [class*="spinner"], [class*="generating"]'
-            );
-
-            return JSON.stringify({ done: !isStreaming && text.length > 0, text: text.trim() });
-          })()
-        `,
-        returnByValue: true,
-      });
-
-      const data = JSON.parse(result.result.value || '{}');
-      if (data.done && data.text) {
-        return data.text;
+      if (typeof result === 'string') {
+        if (result.startsWith('DONE:')) {
+          return result.substring(5);
+        }
+        console.log(`[CDP] Waiting... ${result}`);
       }
     }
 
