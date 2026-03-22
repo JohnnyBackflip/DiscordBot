@@ -138,8 +138,12 @@ class AntigravityManager {
 
   /**
    * Send a message to an Antigravity instance and wait for the response.
+   * @param {string} instanceName
+   * @param {string} message
+   * @param {string|null} model
+   * @param {function} onProgress - Callback: (status, charCount, elapsedSec) => void
    */
-  async sendMessage(instanceName, message, model = null) {
+  async sendMessage(instanceName, message, model = null, onProgress = null) {
     const conn = await this.getConnection(instanceName);
     const { client } = conn;
 
@@ -222,8 +226,8 @@ class AntigravityManager {
 
       console.log(`[CDP] Message sent to "${instanceName}" via ${injectResult}`);
 
-      // Wait for the response
-      const response = await this._waitForResponse(client);
+      // Wait for the response (10 min timeout)
+      const response = await this._waitForResponse(client, 600000, 2000, onProgress);
       return response;
 
     } catch (err) {
@@ -239,7 +243,7 @@ class AntigravityManager {
    * Snapshots the initial conversation text and returns only the NEW content (delta).
    * Filters out thinking/reasoning blocks.
    */
-  async _waitForResponse(client, timeoutMs = 120000, pollIntervalMs = 2000) {
+  async _waitForResponse(client, timeoutMs = 600000, pollIntervalMs = 2000, onProgress = null) {
     const startTime = Date.now();
 
     // Snapshot the initial FULL text of the conversation container
@@ -344,16 +348,32 @@ class AntigravityManager {
           }
         }
 
-        // Rate-limit logs
+        // Report progress and rate-limit logs
         const now = Date.now();
+        const elapsedSec = Math.round((now - startTime) / 1000);
+
         if (now - lastLogTime > 5000) {
           console.log('[CDP] ' + result.substring(0, 100));
           lastLogTime = now;
+
+          // Notify progress callback
+          if (onProgress) {
+            try {
+              if (result.startsWith('STREAMING:')) {
+                const chars = parseInt(result.substring(10)) || 0;
+                onProgress('streaming', chars, elapsedSec);
+              } else if (result.startsWith('WAITING:')) {
+                onProgress('waiting', 0, elapsedSec);
+              } else if (result.startsWith('DONE:')) {
+                onProgress('finishing', result.length - 5, elapsedSec);
+              }
+            } catch (_) {}
+          }
         }
       }
     }
 
-    throw new Error('Timeout waiting for Antigravity response (120s)');
+    throw new Error('Timeout waiting for Antigravity response (10 Minuten)');
   }
 
   /**

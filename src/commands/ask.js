@@ -66,7 +66,36 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const response = await antigravityManager.sendMessage(instanceName, message, model);
+      // Progress tracking
+      let lastProgressUpdate = 0;
+
+      const onProgress = async (status, charCount, elapsedSec) => {
+        // Don't update more than every 5 seconds
+        const now = Date.now();
+        if (now - lastProgressUpdate < 5000) return;
+        lastProgressUpdate = now;
+
+        const minutes = Math.floor(elapsedSec / 60);
+        const seconds = elapsedSec % 60;
+        const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+        let progressMsg;
+        if (status === 'waiting') {
+          progressMsg = `⏳ Warte auf Antwort von **${instanceName}**... (${timeStr})`;
+        } else if (status === 'streaming') {
+          progressMsg = `✍️ **${instanceName}** schreibt... ${charCount} Zeichen (${timeStr})`;
+        } else if (status === 'finishing') {
+          progressMsg = `⌛ Antwort wird finalisiert... (${timeStr})`;
+        }
+
+        if (progressMsg) {
+          try {
+            await interaction.editReply({ content: progressMsg });
+          } catch (_) {}
+        }
+      };
+
+      const response = await antigravityManager.sendMessage(instanceName, message, model, onProgress);
 
       // Truncate if too long for Discord (max 4096 for embed description)
       const truncated = response.length > 4000
@@ -83,7 +112,7 @@ module.exports = {
         .setTimestamp();
 
       // Reply in the same context (channel or DM)
-      await interaction.editReply({ embeds: [embed] });
+      await interaction.editReply({ content: null, embeds: [embed] });
 
     } catch (err) {
       console.error(`[/ask] Error:`, err);
