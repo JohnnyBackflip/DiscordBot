@@ -1,0 +1,249 @@
+================================================================================
+   ANTIGRAVITY DISCORD BOT – SETUP-ANLEITUNG
+   Schritt-für-Schritt: Bot auf der Discord-Website einrichten
+================================================================================
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 1: Discord Developer Portal öffnen
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Öffne deinen Browser und gehe zu:
+   https://discord.com/developers/applications
+
+2. Melde dich mit deinem Discord-Konto an.
+   (Das Konto, mit dem du den Bot verwalten willst)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 2: Neue Application erstellen
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Klicke oben rechts auf den Button "New Application"
+
+2. Gib einen Namen ein, z.B.: "Antigravity Bot"
+
+3. Akzeptiere die Discord Terms of Service
+
+4. Klicke auf "Create"
+
+5. Du bist jetzt auf der "General Information"-Seite.
+   → WICHTIG: Kopiere die "APPLICATION ID" (auch "Client ID" genannt)
+   → Trage sie in deine .env Datei ein als:
+     CLIENT_ID=hier_die_kopierte_id
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 3: Bot-User erstellen
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Klicke links im Menü auf "Bot"
+
+2. Unter "Build-A-Bot" siehst du deinen Bot
+
+3. Klicke auf "Reset Token" (oder "Add Bot" falls noch keiner existiert)
+
+4. Bestätige mit "Yes, do it!"
+
+5. → WICHTIG: Kopiere den BOT TOKEN sofort!
+   Er wird nur einmal angezeigt!
+   → Trage ihn in deine .env Datei ein als:
+     DISCORD_TOKEN=hier_der_kopierte_token
+
+   ⚠️  ACHTUNG: Diesen Token NIEMALS teilen oder öffentlich posten!
+   Jeder mit dem Token kann deinen Bot kontrollieren!
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 4: Bot-Einstellungen konfigurieren
+═══════════════════════════════════════════════════════════════════════════════
+
+Auf der "Bot"-Seite, scrolle runter und stelle folgendes ein:
+
+1. "PUBLIC BOT"
+   → AUS (deaktivieren) – damit nur du den Bot zu Servern einladen kannst
+
+2. "PRESENCE INTENT"
+   → AN (aktivieren)
+
+3. "SERVER MEMBERS INTENT"
+   → AN (aktivieren)
+
+4. "MESSAGE CONTENT INTENT"
+   → AN (aktivieren)
+
+5. Klicke auf "Save Changes" unten
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 5: Bot zu deinem Discord-Server einladen
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Klicke links im Menü auf "OAuth2"
+
+2. Klicke dann auf "URL Generator"
+
+3. Unter "SCOPES" setze folgende Häkchen:
+   ☑ bot
+   ☑ applications.commands
+
+4. Unter "BOT PERMISSIONS" setze folgende Häkchen:
+
+   Allgemein:
+   ☑ Read Messages/View Channels
+
+   Text-Berechtigungen:
+   ☑ Send Messages
+   ☑ Send Messages in Threads
+   ☑ Embed Links
+   ☑ Attach Files
+   ☑ Read Message History
+   ☑ Use Slash Commands
+
+   (Optional, für vollständige Funktionalität:)
+   ☑ Manage Messages
+
+5. Scrolle nach unten – dort siehst du die "GENERATED URL"
+
+6. Kopiere diese URL
+
+7. Öffne die URL in deinem Browser
+
+8. Wähle den Discord-Server aus, auf dem der Bot laufen soll
+
+9. Klicke auf "Authorize"
+
+10. Löse das Captcha
+
+11. → Der Bot ist jetzt auf deinem Server! (erscheint als offline)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 6: Deine Discord User-ID herausfinden (für ADMIN_IDS)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Öffne Discord (App oder Browser)
+
+2. Gehe zu: Einstellungen → Erweitert → "Entwicklermodus"
+   → AN (aktivieren)
+
+3. Gehe zurück zum Chat
+
+4. Klicke mit der RECHTEN Maustaste auf deinen eigenen Namen
+   (in einer Nachricht oder in der Mitgliederliste)
+
+5. Klicke auf "ID kopieren"
+
+6. → Trage die ID in deine .env Datei ein als:
+     ADMIN_IDS=hier_deine_user_id
+
+   Für mehrere Admins, komma-getrennt:
+     ADMIN_IDS=123456789,987654321
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 7: (Optional) Server-ID für schnelle Command-Registrierung
+═══════════════════════════════════════════════════════════════════════════════
+
+Wenn du Commands sofort testen willst (ohne 1 Stunde zu warten):
+
+1. Aktiviere den Entwicklermodus (siehe Schritt 6.2)
+
+2. Klicke mit der RECHTEN Maustaste auf deinen SERVER-NAMEN
+   (ganz oben links über den Channels)
+
+3. Klicke auf "ID kopieren"
+
+4. → Trage die ID in deine .env Datei ein als:
+     GUILD_ID=hier_die_server_id
+
+   HINWEIS: Mit GUILD_ID werden Commands NUR auf diesem Server
+   registriert. Ohne GUILD_ID werden sie global registriert
+   (funktioniert überall, dauert aber bis zu 1 Stunde).
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 8: .env Datei fertigstellen
+═══════════════════════════════════════════════════════════════════════════════
+
+Deine .env Datei sollte jetzt so aussehen:
+
+   DISCORD_TOKEN=MTIzNDU2Nzg5MDEyMzQ1Njc4.XXXXXX.XXXXXXXXXXXXXXXXXXXXXXXX
+   CLIENT_ID=123456789012345678
+   ADMIN_IDS=987654321098765432
+   GUILD_ID=111222333444555666
+
+(Die Werte oben sind nur Beispiele – benutze deine eigenen!)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 9: Bot starten
+═══════════════════════════════════════════════════════════════════════════════
+
+Öffne ein Terminal im Projektordner und führe aus:
+
+   # 1. Slash Commands registrieren (einmalig)
+   npm run deploy
+
+   # 2. Bot starten
+   npm start
+
+   # Oder für Entwicklung (Auto-Restart bei Änderungen):
+   npm run dev
+
+Wenn alles klappt, siehst du:
+   ✅ Bot ready! Logged in as AntgravityBot#1234
+   📡 Serving 1 server(s)
+
+Der Bot erscheint jetzt als ONLINE auf deinem Discord-Server!
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 10: Erste Schritte als Admin
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Antigravity-Instanz registrieren:
+   /instance add name:mein-ag port:9222
+
+2. Instanz verbinden:
+   /instance connect name:mein-ag
+
+3. User freischalten:
+   /permit grant user:@Benutzername instance:mein-ag
+
+4. Commands für User freischalten:
+   /command-access grant-all user:@Benutzername
+
+5. Testen:
+   /ask message:Hallo, wie geht es dir?
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ FEHLERBEHEBUNG
+═══════════════════════════════════════════════════════════════════════════════
+
+Problem: "DISCORD_TOKEN not set"
+→ Stelle sicher, dass die .env Datei im Hauptverzeichnis liegt
+→ Prüfe ob der Token korrekt kopiert wurde (keine Leerzeichen)
+
+Problem: "Missing Access" oder "Missing Permissions"
+→ Bot hat nicht genug Rechte auf dem Server
+→ Lade den Bot erneut ein mit den korrekten Permissions (Schritt 5)
+
+Problem: Commands werden nicht angezeigt
+→ Führe "npm run deploy" aus
+→ Mit GUILD_ID: sofort sichtbar
+→ Ohne GUILD_ID: bis zu 1 Stunde warten
+
+Problem: Bot ist offline
+→ Stelle sicher, dass "npm start" läuft
+→ Prüfe die Konsole auf Fehlermeldungen
+
+Problem: "Invalid Token"
+→ Gehe zum Developer Portal → Bot → Reset Token
+→ Kopiere den neuen Token in die .env Datei
+
+
+================================================================================
+   Bei Fragen: Lies die README.md oder benutze /help im Discord Chat
+================================================================================
