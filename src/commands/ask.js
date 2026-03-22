@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const antigravityManager = require('../antigravity/manager');
-const { hasInstanceAccess, getEffectiveModel, isModelBlocked } = require('../permissions/permissions');
+const { isAdmin, hasInstanceAccess, getEffectiveModel, isModelBlocked } = require('../permissions/permissions');
 const { stmts } = require('../database/db');
 
 module.exports = {
@@ -25,14 +25,24 @@ module.exports = {
 
     // If no instance specified, use the first one the user has access to
     if (!instanceName) {
-      const userInstances = stmts.getUserInstances.all(userId);
-      if (userInstances.length === 0) {
+      let availableInstances;
+
+      if (isAdmin(userId)) {
+        // Admins have access to all instances
+        availableInstances = stmts.listInstances.all().map(i => ({ instance_name: i.name }));
+      } else {
+        availableInstances = stmts.getUserInstances.all(userId);
+      }
+
+      if (availableInstances.length === 0) {
         return interaction.reply({
-          content: '🚫 Du hast keinen Zugriff auf eine Antigravity-Instanz. Wende dich an einen Admin.',
+          content: isAdmin(userId)
+            ? '📭 Keine Antigravity-Instanzen registriert. Nutze `/instance add` um eine hinzuzufügen.'
+            : '🚫 Du hast keinen Zugriff auf eine Antigravity-Instanz. Wende dich an einen Admin.',
           ephemeral: true,
         });
       }
-      instanceName = userInstances[0].instance_name;
+      instanceName = availableInstances[0].instance_name;
     }
 
     // Check instance access
