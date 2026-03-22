@@ -120,12 +120,11 @@ class AntigravityManager {
   }
 
   /**
-   * Helper to evaluate JS in the Antigravity window and return the result as a string.
+   * Helper to evaluate JS synchronously in the Antigravity window.
    */
   async _evaluate(client, expression) {
     const result = await client.Runtime.evaluate({
       expression,
-      awaitPromise: true,
       returnByValue: true,
     });
 
@@ -148,83 +147,83 @@ class AntigravityManager {
     const { client } = conn;
 
     try {
-      // Inject the message into the Antigravity Agent chat input
       const escapedMessage = JSON.stringify(message);
 
-      const injectResult = await this._evaluate(client, `
-        (async () => {
+      // Step 1: Focus and clear the textbox (synchronous)
+      const step1 = await this._evaluate(client, `
+        (() => {
           const inputBox = document.getElementById('antigravity.agentSidePanelInputBox');
           if (!inputBox) return 'ERROR:Agent panel input box not found. Is the Agent panel open? (Ctrl+Alt+B)';
-
           const textbox = inputBox.querySelector('[role="textbox"]');
           if (!textbox) return 'ERROR:Chat textbox not found inside agent panel.';
-
-          // Focus the textbox
           textbox.focus();
-
-          // Clear existing content using Selection API (avoids Trusted Types)
           const selection = window.getSelection();
           const range = document.createRange();
           range.selectNodeContents(textbox);
           selection.removeAllRanges();
           selection.addRange(range);
           document.execCommand('delete', false);
-
-          // Insert text using execCommand - this triggers React state updates
           document.execCommand('insertText', false, ${escapedMessage});
-
-          // Verify text was actually inserted
-          await new Promise(r => setTimeout(r, 200));
-          const currentText = textbox.textContent || textbox.innerText || '';
-          if (currentText.trim().length === 0) {
-            return 'ERROR:Text insertion failed - textbox is still empty after execCommand';
-          }
-
-          await new Promise(r => setTimeout(r, 300));
-
-          // Submit via Enter key (most reliable for chat inputs)
-          const enterEvent = new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true,
-          });
-          const wasHandled = !textbox.dispatchEvent(enterEvent);
-
-          if (wasHandled) {
-            return 'OK:enter (preventDefault called)';
-          }
-
-          // If Enter wasn't handled, try clicking a send button
-          const btns = inputBox.querySelectorAll('button');
-          let sendBtn = null;
-          for (const btn of btns) {
-            const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-            const title = (btn.getAttribute('title') || '').toLowerCase();
-            if (label.includes('send') || label.includes('submit') || title.includes('send')) {
-              sendBtn = btn;
-              break;
-            }
-          }
-          if (!sendBtn && btns.length > 0) {
-            sendBtn = btns[btns.length - 1];
-          }
-          if (sendBtn) {
-            sendBtn.click();
-            return 'OK:button';
-          }
-
-          return 'OK:enter (no handler)';
+          return 'OK';
         })()
       `);
 
-      if (typeof injectResult === 'string' && injectResult.startsWith('ERROR:')) {
-        throw new Error(injectResult.substring(6));
+      if (typeof step1 === 'string' && step1.startsWith('ERROR:')) {
+        throw new Error(step1.substring(6));
       }
 
-      console.log(`[CDP] Message sent to "${instanceName}" via ${injectResult}`);
+      // Delay on Node side (let the framework process the input)
+      await new Promise(r => setTimeout(r, 500));
+
+      // Step 2: Verify text was inserted
+      const step2 = await this._evaluate(client, `
+        (() => {
+          const inputBox = document.getElementById('antigravity.agentSidePanelInputBox');
+          const textbox = inputBox?.querySelector('[role="textbox"]');
+          if (!textbox) return 'ERROR:Textbox not found for verification';
+          const text = (textbox.textContent || textbox.innerText || '').trim();
+          return text.length > 0 ? 'OK:' + text.length + ' chars' : 'ERROR:Textbox is empty after insert';
+        })()
+      `);
+
+      if (typeof step2 === 'string' && step2.startsWith('ERROR:')) {
+        throw new Error(step2.substring(6));
+      }
+
+      // Delay before submit
+      await new Promise(r => setTimeout(r, 300));
+
+      // Step 3: Submit via Enter key
+      const step3 = await this._evaluate(client, `
+        (() => {
+          const inputBox = document.getElementById('antigravity.agentSidePanelInputBox');
+          const textbox = inputBox?.querySelector('[role="textbox"]');
+          if (!textbox) return 'ERROR:Textbox gone';
+          const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+            bubbles: true, cancelable: true,
+          });
+          const wasHandled = !textbox.dispatchEvent(enterEvent);
+          if (wasHandled) return 'OK:enter';
+          // Fallback: click send button
+          const btns = inputBox.querySelectorAll('button');
+          for (const btn of btns) {
+            const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+            if (label.includes('send') || label.includes('submit')) {
+              btn.click();
+              return 'OK:button';
+            }
+          }
+          if (btns.length > 0) { btns[btns.length - 1].click(); return 'OK:button-fallback'; }
+          return 'OK:enter-nohandler';
+        })()
+      `);
+
+      if (typeof step3 === 'string' && step3.startsWith('ERROR:')) {
+        throw new Error(step3.substring(6));
+      }
+
+      console.log(`[CDP] Message sent to "${instanceName}" via ${step3}`);
 
       // Wait for the response (10 min timeout)
       const response = await this._waitForResponse(client, 600000, 2000, onProgress);
@@ -382,19 +381,24 @@ class AntigravityManager {
   _cleanResponse(text) {
     let cleaned = text;
 
-    // Remove "Thought for Xs" lines
-    cleaned = cleaned.replace(/Thought for\s*<?[\d]+s?\s*>?\s*/gi, '');
+    // Remove "Thought for Xs" / "Thought for <1s" lines
+    cleaned = cleaned.replace(/^Thought for\s*<?[\d]*\s*s?>?\s*$/gim, '');
 
-    // Remove thinking block titles (common patterns)
-    const thinkingPatterns = [
-      /^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing)[\w\s]*$/gim,
-    ];
-    for (const pattern of thinkingPatterns) {
-      cleaned = cleaned.replace(pattern, '');
-    }
+    // Remove thinking block titles (standalone lines)
+    cleaned = cleaned.replace(/^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing|Generating)[\w\s.]*$/gim, '');
+
+    // Remove thinking description paragraphs (lines starting with "I'm now...", "I'm currently...", etc.)
+    cleaned = cleaned.replace(/^I'?m\s+(now|currently)\s+.{0,200}$/gim, '');
+
+    // Remove lines that are just continuation of thinking ("The focus is on...", "I am thinking...")
+    cleaned = cleaned.replace(/^(The focus is|I am thinkin|It's becoming|Understanding the|I'm focusing|I'm exploring).{0,200}$/gim, '');
 
     // Remove "Thinking..." standalone lines
     cleaned = cleaned.replace(/^Thinking\.{0,3}\s*$/gim, '');
+
+    // Remove "Ran command" / "Ran background command" tool output headers
+    // These are tool-use indicators that shouldn't appear in chat responses
+    cleaned = cleaned.replace(/^Ran\s+(background\s+)?command\s*$/gim, '');
 
     // Remove duplicate blank lines
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
