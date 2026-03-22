@@ -54,12 +54,36 @@ GUILD_ID=optional_server_id_für_dev
 
 ### Antigravity vorbereiten
 
-Jede Antigravity-Instanz muss mit Remote-Debugging gestartet werden:
+> ⚠️ **WICHTIG:** Du musst den **direkten Electron-Binary** verwenden, nicht den `antigravity`-Shell-Wrapper!
+> Der Shell-Wrapper (`/usr/bin/antigravity`) leitet die Flags über `cli.js` weiter, wodurch Chromium-Flags wie `--remote-debugging-port` ignoriert werden.
+
+**Eine einzelne Instanz starten:**
 
 ```bash
-# Beispiel: Antigravity mit CDP auf Port 8765 starten
-antigravity --remote-debugging-port=8765
+/usr/share/antigravity/antigravity --remote-debugging-port=8765 --user-data-dir=$HOME/.antigravity-instance-1
 ```
+
+**Mehrere Instanzen parallel starten** (jede braucht einen eigenen Port UND ein eigenes `user-data-dir`):
+
+```bash
+# Instanz 1 – Port 8765
+/usr/share/antigravity/antigravity --remote-debugging-port=8765 --user-data-dir=$HOME/.antigravity-instance-1
+
+# Instanz 2 – Port 8766
+/usr/share/antigravity/antigravity --remote-debugging-port=8766 --user-data-dir=$HOME/.antigravity-instance-2
+
+# Instanz 3 – Port 8767
+/usr/share/antigravity/antigravity --remote-debugging-port=8767 --user-data-dir=$HOME/.antigravity-instance-3
+```
+
+**Prüfen ob der CDP-Port offen ist:**
+
+```bash
+curl http://localhost:8765/json/version
+# Wenn JSON zurückkommt → Port ist offen und bereit
+```
+
+> **Hinweis:** `--user-data-dir` ist nötig, damit mehrere Instanzen parallel laufen können. Ohne eigenes Verzeichnis blockiert die zweite Instanz.
 
 ### Bot starten
 

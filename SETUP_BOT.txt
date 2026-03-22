@@ -177,6 +177,40 @@ Deine .env Datei sollte jetzt so aussehen:
 
 
 ═══════════════════════════════════════════════════════════════════════════════
+ SCHRITT 8.5: Antigravity-Instanzen mit CDP starten
+═══════════════════════════════════════════════════════════════════════════════
+
+   ⚠️  WICHTIG: Du musst den DIREKTEN Electron-Binary verwenden!
+   Der normale "antigravity" Befehl ist ein Shell-Wrapper und
+   ignoriert Chromium-Flags wie --remote-debugging-port!
+
+   FALSCH (funktioniert NICHT):
+   antigravity --remote-debugging-port=8765
+
+   RICHTIG:
+   /usr/share/antigravity/antigravity --remote-debugging-port=8765 --user-data-dir=$HOME/.ag-instanz-1
+
+   Für mehrere Instanzen brauchst du:
+   - Einen eigenen Port pro Instanz
+   - Ein eigenes --user-data-dir pro Instanz
+
+   Beispiel – 3 Instanzen parallel:
+
+   # Terminal 1:
+   /usr/share/antigravity/antigravity --remote-debugging-port=8765 --user-data-dir=$HOME/.ag-instanz-1
+
+   # Terminal 2:
+   /usr/share/antigravity/antigravity --remote-debugging-port=8766 --user-data-dir=$HOME/.ag-instanz-2
+
+   # Terminal 3:
+   /usr/share/antigravity/antigravity --remote-debugging-port=8767 --user-data-dir=$HOME/.ag-instanz-3
+
+   So prüfst du ob der Port offen ist:
+   curl http://localhost:8765/json/version
+   → Wenn JSON zurückkommt, ist der Port bereit!
+
+
+═══════════════════════════════════════════════════════════════════════════════
  SCHRITT 9: Bot starten
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -218,8 +252,8 @@ Der Bot erscheint jetzt als ONLINE auf deinem Discord-Server!
 
    Beispiel – mehrere Instanzen für verschiedene Projekte:
    /instance add name:projekt-alpha port:8765 description:Frontend-Projekt
-   /instance add name:projekt-beta port:9223 description:Backend-Projekt
-   /instance add name:test-ag port:9224 description:Zum Testen
+   /instance add name:projekt-beta port:8766 description:Backend-Projekt
+   /instance add name:test-ag port:8767 description:Zum Testen
 
    Alle registrierten Instanzen anzeigen:
    /instance list
