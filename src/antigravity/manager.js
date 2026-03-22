@@ -218,18 +218,30 @@ class AntigravityManager {
 
   /**
    * Poll the DOM for a new AI response.
+   * Uses the scrollable messages container (.mx-auto.w-full) inside the agent panel.
    */
   async _waitForResponse(client, timeoutMs = 120000, pollIntervalMs = 2000) {
     const startTime = Date.now();
 
-    // Count existing messages
-    const initialMessageCount = await this._evaluate(client, `
+    // Snapshot the initial text length of the messages container
+    const initialState = await this._evaluate(client, `
       (() => {
         const panel = document.querySelector('.antigravity-agent-side-panel');
-        if (!panel) return 0;
-        return panel.querySelectorAll('[class*="prose"], [class*="markdown"], [class*="message"]').length;
+        if (!panel) return '0|0';
+        // The scrollable messages container
+        const scrollContainer = panel.querySelector('.h-full.overflow-y-auto');
+        if (!scrollContainer) return '0|0';
+        const container = scrollContainer.querySelector('.mx-auto.w-full') || scrollContainer;
+        const children = container.children.length;
+        const textLen = container.textContent.length;
+        return children + '|' + textLen;
       })()
-    `) || 0;
+    `) || '0|0';
+
+    const [initChildren, initTextLen] = (initialState + '').split('|').map(Number);
+    console.log('[CDP] Initial state: ' + initChildren + ' children, ' + initTextLen + ' chars');
+
+    let lastLogTime = 0;
 
     while (Date.now() - startTime < timeoutMs) {
       await new Promise(r => setTimeout(r, pollIntervalMs));
@@ -239,29 +251,62 @@ class AntigravityManager {
           const panel = document.querySelector('.antigravity-agent-side-panel');
           if (!panel) return 'WAITING:panel not found';
 
-          const msgs = panel.querySelectorAll('[class*="prose"], [class*="markdown"], [class*="message"]');
-          if (msgs.length <= ${initialMessageCount}) return 'WAITING:no new message';
+          const scrollContainer = panel.querySelector('.h-full.overflow-y-auto');
+          if (!scrollContainer) return 'WAITING:scroll container not found';
 
-          const lastMsg = msgs[msgs.length - 1];
-          const text = (lastMsg.innerText || lastMsg.textContent || '').trim();
-          if (!text) return 'WAITING:empty message';
+          const container = scrollContainer.querySelector('.mx-auto.w-full') || scrollContainer;
+          const children = container.children.length;
+          const textLen = container.textContent.length;
 
-          // Check if still generating
+          // No new content yet
+          if (textLen <= ${initTextLen} && children <= ${initChildren}) {
+            return 'WAITING:no new content (children=' + children + ', chars=' + textLen + ')';
+          }
+
+          // Get the text of the LAST child element (should be the new response)
+          const lastChild = container.children[container.children.length - 1];
+          if (!lastChild) return 'WAITING:no last child';
+
+          const responseText = (lastChild.innerText || lastChild.textContent || '').trim();
+          if (!responseText) return 'WAITING:last child has no text';
+
+          // Check if the AI is still generating (look for streaming indicators anywhere in the panel)
           const isStreaming = !!panel.querySelector(
-            '[class*="typing"], [class*="streaming"], [class*="loading"], ' +
-            '[class*="spinner"], [class*="generating"], [class*="cursor-blink"]'
+            '[class*="stop"], [class*="typing"], [class*="streaming"], [class*="loading"], ' +
+            '[class*="spinner"], [class*="generating"], [class*="cursor-blink"], ' +
+            '[class*="animate-pulse"], [class*="animate-spin"]'
           );
 
-          if (isStreaming) return 'WAITING:still streaming';
-          return 'DONE:' + text;
+          if (isStreaming) return 'STREAMING:' + responseText.length + ' chars so far';
+
+          // Wait one extra poll to make sure streaming really stopped
+          return 'DONE:' + responseText;
         })()
       `);
 
       if (typeof result === 'string') {
         if (result.startsWith('DONE:')) {
-          return result.substring(5);
+          const text = result.substring(5);
+          // Double-check: wait one more poll to confirm it's really done
+          await new Promise(r => setTimeout(r, 1500));
+          const confirm = await this._evaluate(client, `
+            (() => {
+              const panel = document.querySelector('.antigravity-agent-side-panel');
+              const sc = panel?.querySelector('.h-full.overflow-y-auto');
+              const c = sc?.querySelector('.mx-auto.w-full') || sc;
+              if (!c) return '';
+              const last = c.children[c.children.length - 1];
+              return (last?.innerText || last?.textContent || '').trim();
+            })()
+          `);
+          return (typeof confirm === 'string' && confirm.length > text.length) ? confirm : text;
         }
-        console.log(`[CDP] Waiting... ${result}`);
+        // Rate-limit log output
+        const now = Date.now();
+        if (now - lastLogTime > 5000) {
+          console.log('[CDP] ' + result);
+          lastLogTime = now;
+        }
       }
     }
 
@@ -269,7 +314,7 @@ class AntigravityManager {
   }
 
   /**
-   * Debug: dump the DOM structure of the agent panel.
+   * Debug: dump the DOM structure of the agent panel (focused on messages).
    */
   async dumpPanelDOM(instanceName) {
     const conn = await this.getConnection(instanceName);
@@ -278,20 +323,22 @@ class AntigravityManager {
     return await this._evaluate(client, `
       (() => {
         const panel = document.querySelector('.antigravity-agent-side-panel');
-        if (!panel) return 'NO PANEL FOUND (.antigravity-agent-side-panel)';
+        if (!panel) return 'NO PANEL FOUND';
 
-        const lines = [];
-        const walk = (el, d) => {
-          if (d > 5) return;
-          const cls = (el.className || '').toString().substring(0, 150);
-          const tag = el.tagName;
-          const ch = el.children.length;
-          const txtLen = (el.textContent || '').length;
-          const pad = '  '.repeat(d);
-          lines.push(pad + tag + ' .' + cls + ' [' + ch + 'ch, ' + txtLen + 'txt]');
-          for (let i = 0; i < Math.min(ch, 8); i++) walk(el.children[i], d + 1);
-        };
-        walk(panel, 0);
+        const sc = panel.querySelector('.h-full.overflow-y-auto');
+        if (!sc) return 'NO SCROLL CONTAINER';
+
+        const container = sc.querySelector('.mx-auto.w-full') || sc;
+        const children = container.children;
+        const lines = ['Container: ' + children.length + ' children, ' + container.textContent.length + ' chars'];
+
+        for (let i = 0; i < children.length; i++) {
+          const child = children[i];
+          const cls = (child.className || '').toString().substring(0, 100);
+          const txt = (child.textContent || '').substring(0, 80).replace(/\\n/g, ' ');
+          lines.push('Child ' + i + ': .' + cls + ' | "' + txt + '..."');
+        }
+
         return lines.join('\\n');
       })()
     `);
