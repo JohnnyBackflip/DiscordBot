@@ -236,30 +236,29 @@ class AntigravityManager {
 
   /**
    * Poll the DOM for a new AI response.
-   * Uses the scrollable messages container (.mx-auto.w-full) inside the agent panel.
+   * Snapshots the initial conversation text and returns only the NEW content (delta).
+   * Filters out thinking/reasoning blocks.
    */
   async _waitForResponse(client, timeoutMs = 120000, pollIntervalMs = 2000) {
     const startTime = Date.now();
 
-    // Snapshot the initial text length of the messages container
-    const initialState = await this._evaluate(client, `
+    // Snapshot the initial FULL text of the conversation container
+    const initialSnapshot = await this._evaluate(client, `
       (() => {
         const panel = document.querySelector('.antigravity-agent-side-panel');
-        if (!panel) return '0|0';
-        // The scrollable messages container
+        if (!panel) return '';
         const scrollContainer = panel.querySelector('.h-full.overflow-y-auto');
-        if (!scrollContainer) return '0|0';
-        const container = scrollContainer.querySelector('.mx-auto.w-full') || scrollContainer;
-        const children = container.children.length;
-        const textLen = container.textContent.length;
-        return children + '|' + textLen;
+        if (!scrollContainer) return '';
+        return (scrollContainer.innerText || scrollContainer.textContent || '');
       })()
-    `) || '0|0';
+    `) || '';
 
-    const [initChildren, initTextLen] = (initialState + '').split('|').map(Number);
-    console.log('[CDP] Initial state: ' + initChildren + ' children, ' + initTextLen + ' chars');
+    const initLen = (initialSnapshot + '').length;
+    console.log('[CDP] Initial snapshot: ' + initLen + ' chars');
 
     let lastLogTime = 0;
+    let stableCount = 0;
+    let lastResponseText = '';
 
     while (Date.now() - startTime < timeoutMs) {
       await new Promise(r => setTimeout(r, pollIntervalMs));
@@ -272,63 +271,88 @@ class AntigravityManager {
           const scrollContainer = panel.querySelector('.h-full.overflow-y-auto');
           if (!scrollContainer) return 'WAITING:scroll container not found';
 
-          const container = scrollContainer.querySelector('.mx-auto.w-full') || scrollContainer;
-          const children = container.children.length;
-          const textLen = container.textContent.length;
+          const fullText = scrollContainer.innerText || scrollContainer.textContent || '';
+          const currentLen = fullText.length;
 
           // No new content yet
-          if (textLen <= ${initTextLen} && children <= ${initChildren}) {
-            return 'WAITING:no new content (children=' + children + ', chars=' + textLen + ')';
+          if (currentLen <= ${initLen}) {
+            return 'WAITING:no new content (' + currentLen + ' chars)';
           }
 
-          // Get the text of the LAST child element (should be the new response)
-          const lastChild = container.children[container.children.length - 1];
-          if (!lastChild) return 'WAITING:no last child';
+          // Extract only the NEW text (delta from initial snapshot)
+          const newText = fullText.substring(${initLen}).trim();
+          if (!newText) return 'WAITING:empty delta';
 
-          const responseText = (lastChild.innerText || lastChild.textContent || '').trim();
-          if (!responseText) return 'WAITING:last child has no text';
-
-          // Check if the AI is still generating (look for streaming indicators anywhere in the panel)
+          // Check if still generating
           const isStreaming = !!panel.querySelector(
-            '[class*="stop"], [class*="typing"], [class*="streaming"], [class*="loading"], ' +
-            '[class*="spinner"], [class*="generating"], [class*="cursor-blink"], ' +
+            '[class*="stop"], [class*="typing"], [class*="streaming"], ' +
+            '[class*="spinner"], [class*="generating"], ' +
             '[class*="animate-pulse"], [class*="animate-spin"]'
           );
 
-          if (isStreaming) return 'STREAMING:' + responseText.length + ' chars so far';
-
-          // Wait one extra poll to make sure streaming really stopped
-          return 'DONE:' + responseText;
+          if (isStreaming) return 'STREAMING:' + newText.length + ' chars';
+          return 'DONE:' + newText;
         })()
       `);
 
       if (typeof result === 'string') {
         if (result.startsWith('DONE:')) {
-          const text = result.substring(5);
-          // Double-check: wait one more poll to confirm it's really done
-          await new Promise(r => setTimeout(r, 1500));
-          const confirm = await this._evaluate(client, `
-            (() => {
-              const panel = document.querySelector('.antigravity-agent-side-panel');
-              const sc = panel?.querySelector('.h-full.overflow-y-auto');
-              const c = sc?.querySelector('.mx-auto.w-full') || sc;
-              if (!c) return '';
-              const last = c.children[c.children.length - 1];
-              return (last?.innerText || last?.textContent || '').trim();
-            })()
-          `);
-          return (typeof confirm === 'string' && confirm.length > text.length) ? confirm : text;
+          const rawText = result.substring(5);
+
+          // Check if the response has stabilized (not changing anymore)
+          if (rawText === lastResponseText) {
+            stableCount++;
+            if (stableCount >= 2) {
+              // Response is stable – clean it up and return
+              return this._cleanResponse(rawText);
+            }
+          } else {
+            stableCount = 0;
+            lastResponseText = rawText;
+          }
+        } else if (result.startsWith('STREAMING:')) {
+          stableCount = 0;
         }
-        // Rate-limit log output
+
+        // Rate-limit logs
         const now = Date.now();
         if (now - lastLogTime > 5000) {
-          console.log('[CDP] ' + result);
+          console.log('[CDP] ' + result.substring(0, 100));
           lastLogTime = now;
         }
       }
     }
 
     throw new Error('Timeout waiting for Antigravity response (120s)');
+  }
+
+  /**
+   * Clean up an AI response by removing thinking blocks and artifacts.
+   */
+  _cleanResponse(text) {
+    let cleaned = text;
+
+    // Remove "Thought for Xs" lines
+    cleaned = cleaned.replace(/Thought for\s*<?[\d]+s?\s*>?\s*/gi, '');
+
+    // Remove thinking block titles (common patterns)
+    const thinkingPatterns = [
+      /^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing)[\w\s]*$/gim,
+    ];
+    for (const pattern of thinkingPatterns) {
+      cleaned = cleaned.replace(pattern, '');
+    }
+
+    // Remove "Thinking..." standalone lines
+    cleaned = cleaned.replace(/^Thinking\.{0,3}\s*$/gim, '');
+
+    // Remove duplicate blank lines
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+    // Trim
+    cleaned = cleaned.trim();
+
+    return cleaned || '*(Leere Antwort)*';
   }
 
   /**
