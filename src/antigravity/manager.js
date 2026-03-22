@@ -283,9 +283,9 @@ class AntigravityManager {
           const newText = fullText.substring(${initLen}).trim();
           if (!newText) return 'WAITING:empty delta';
 
-          // Check if still generating
+          // Check if still generating (be conservative with selectors)
           const isStreaming = !!panel.querySelector(
-            '[class*="stop"], [class*="typing"], [class*="streaming"], ' +
+            '[class*="typing"], [class*="streaming"], ' +
             '[class*="spinner"], [class*="generating"], ' +
             '[class*="animate-pulse"], [class*="animate-spin"]'
           );
@@ -296,22 +296,52 @@ class AntigravityManager {
       `);
 
       if (typeof result === 'string') {
-        if (result.startsWith('DONE:')) {
-          const rawText = result.substring(5);
+        if (result.startsWith('DONE:') || result.startsWith('STREAMING:')) {
+          // For DONE, extract text directly; for STREAMING, check if text is stable
+          let rawText;
+          if (result.startsWith('DONE:')) {
+            rawText = result.substring(5);
+          } else {
+            // Extract the char count from streaming, but we need the actual text
+            // Re-use lastResponseText for streaming stability tracking
+            rawText = null;
+          }
 
-          // Check if the response has stabilized (not changing anymore)
-          if (rawText === lastResponseText) {
-            stableCount++;
-            if (stableCount >= 2) {
-              // Response is stable – clean it up and return
-              return this._cleanResponse(rawText);
+          if (result.startsWith('STREAMING:')) {
+            // Track streaming stability by char count
+            const charCount = result.substring(10);
+            if (charCount === lastResponseText) {
+              stableCount++;
+              // If streaming text hasn't changed for 3 polls, it's done
+              if (stableCount >= 3) {
+                // Fetch the actual text one more time
+                const finalText = await this._evaluate(client, `
+                  (() => {
+                    const panel = document.querySelector('.antigravity-agent-side-panel');
+                    const sc = panel?.querySelector('.h-full.overflow-y-auto');
+                    if (!sc) return '';
+                    const fullText = sc.innerText || sc.textContent || '';
+                    return fullText.substring(${initLen}).trim();
+                  })()
+                `);
+                return this._cleanResponse(finalText || '');
+              }
+            } else {
+              stableCount = 0;
+              lastResponseText = charCount;
             }
           } else {
-            stableCount = 0;
-            lastResponseText = rawText;
+            // DONE result
+            if (rawText === lastResponseText) {
+              stableCount++;
+              if (stableCount >= 2) {
+                return this._cleanResponse(rawText);
+              }
+            } else {
+              stableCount = 0;
+              lastResponseText = rawText;
+            }
           }
-        } else if (result.startsWith('STREAMING:')) {
-          stableCount = 0;
         }
 
         // Rate-limit logs
