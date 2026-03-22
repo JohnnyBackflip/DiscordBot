@@ -202,20 +202,156 @@ Der Bot erscheint jetzt als ONLINE auf deinem Discord-Server!
  SCHRITT 10: Erste Schritte als Admin
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. Antigravity-Instanz registrieren:
-   /instance add name:mein-ag port:9222
+──── 10.1  Antigravity-Instanzen registrieren ────
 
-2. Instanz verbinden:
+   Bevor der Bot etwas tun kann, musst du mindestens eine
+   Antigravity-Instanz registrieren.
+
+   Beispiel – eine lokale Instanz auf Port 8765:
+   /instance add name:mein-ag port:8765
+
+   Beispiel – Instanz mit Beschreibung:
+   /instance add name:mein-ag port:8765 description:Mein Haupt-Antigravity
+
+   Beispiel – Instanz auf einem anderen Rechner:
+   /instance add name:buero-ag port:9333 host:192.168.1.50
+
+   Beispiel – mehrere Instanzen für verschiedene Projekte:
+   /instance add name:projekt-alpha port:8765 description:Frontend-Projekt
+   /instance add name:projekt-beta port:9223 description:Backend-Projekt
+   /instance add name:test-ag port:9224 description:Zum Testen
+
+   Alle registrierten Instanzen anzeigen:
+   /instance list
+
+   → Zeigt: 🟢 (verbunden) oder 🔴 (nicht verbunden) pro Instanz
+
+
+──── 10.2  Instanz verbinden ────
+
+   Nach dem Registrieren musst du die Verbindung herstellen.
+   Antigravity muss dabei mit --remote-debugging-port laufen!
+
+   Beispiel – Verbindung herstellen:
    /instance connect name:mein-ag
 
-3. User freischalten:
-   /permit grant user:@Benutzername instance:mein-ag
+   Beispiel – Verbindung trennen:
+   /instance disconnect name:mein-ag
 
-4. Commands für User freischalten:
-   /command-access grant-all user:@Benutzername
+   Beispiel – Instanz komplett entfernen:
+   /instance remove name:test-ag
 
-5. Testen:
+   Tipp: Der Bot verbindet sich auch automatisch, wenn ein User
+   /ask an eine noch nicht verbundene Instanz schickt.
+
+
+──── 10.3  User für Instanzen freischalten ────
+
+   Standardmäßig haben User KEINEN Zugriff. Du musst jeden
+   User einzeln für jede Instanz freischalten.
+
+   Beispiel – User Max für eine Instanz freischalten:
+   /permit grant user:@Max instance:mein-ag
+
+   Beispiel – User Max für mehrere Instanzen freischalten:
+   /permit grant user:@Max instance:projekt-alpha
+   /permit grant user:@Max instance:projekt-beta
+
+   Beispiel – Zugriff einer Instanz entziehen:
+   /permit revoke user:@Max instance:projekt-beta
+
+   Beispiel – ALLEN Zugriff eines Users entziehen:
+   /permit revoke user:@Max
+   (Ohne instance-Angabe werden ALLE Instanzen entzogen)
+
+   Beispiel – Berechtigungen eines Users anzeigen:
+   /permit list user:@Max
+   → Zeigt alle Instanzen und Commands, die Max benutzen darf
+
+
+──── 10.4  Commands für User freischalten ────
+
+   Selbst mit Instanz-Zugriff kann ein User keine Commands
+   benutzen, bis du sie einzeln oder alle auf einmal freigibst.
+
+   Beispiel – ALLE Commands auf einmal freischalten (empfohlen):
+   /command-access grant-all user:@Max
+
+   Beispiel – nur bestimmte Commands freischalten:
+   /command-access grant user:@Max command:ask
+   /command-access grant user:@Max command:model
+   /command-access grant user:@Max command:files
+   /command-access grant user:@Max command:status
+
+   Beispiel – einen Command wieder sperren:
+   /command-access revoke user:@Max command:admin
+   (So kann Max z.B. alles außer Admin-Commands nutzen)
+
+   Beispiel – Command-Berechtigungen eines Users anzeigen:
+   /command-access list user:@Max
+   → Zeigt: ✅ /ask, ✅ /model, ❌ /admin, usw.
+
+
+──── 10.5  Modelle verwalten ────
+
+   User können ihr Modell selbst wählen, aber du kannst als
+   Admin Modelle erzwingen oder blockieren.
+
+   Beispiel – Modell für einen User erzwingen (Lock):
+   /model lock user:@Max model:gemini-2.5-pro
+   → Max kann NUR dieses Modell benutzen, egal was er einstellt
+
+   Beispiel – Modell-Lock aufheben:
+   /model unlock user:@Max
+   → Max kann wieder frei wählen
+
+   Beispiel – ein bestimmtes Modell für einen User blockieren:
+   /model block user:@Max model:gpt-4o
+   → Max kann alles außer GPT-4o benutzen
+
+   Beispiel – Block wieder aufheben:
+   /model unblock user:@Max model:gpt-4o
+
+   Beispiel – Standard-Modell eines Users direkt setzen:
+   /admin set-model user:@Max model:claude-sonnet-4-20250514
+
+
+──── 10.6  Testen ────
+
+   Jetzt kannst du den Bot testen!
+
+   Beispiel – einfache Frage an die Standard-Instanz:
    /ask message:Hallo, wie geht es dir?
+
+   Beispiel – Frage an eine bestimmte Instanz:
+   /ask message:Erkläre mir React Hooks instance:projekt-alpha
+
+   Beispiel – längere Anfrage:
+   /ask message:Schreibe eine Python-Funktion die Fibonacci berechnet
+
+   Beispiel – Status aller Instanzen prüfen:
+   /status
+
+   Beispiel – Admin-Dashboard anzeigen:
+   /admin status
+
+   Beispiel – .md Dateien anzeigen:
+   /files list
+   /files view path:README.md
+
+   Beispiel – Hilfe anzeigen (funktioniert für alle):
+   /help
+
+
+──── 10.7  User komplett zurücksetzen ────
+
+   Falls du alle Einstellungen und Berechtigungen eines Users
+   auf einmal löschen willst:
+
+   Beispiel:
+   /admin reset-user user:@Max
+   → Löscht: Instanz-Zugriffe, Command-Berechtigungen,
+     Modell-Einstellungen, Modell-Sperren
 
 
 ═══════════════════════════════════════════════════════════════════════════════

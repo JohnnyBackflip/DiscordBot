@@ -57,8 +57,8 @@ GUILD_ID=optional_server_id_für_dev
 Jede Antigravity-Instanz muss mit Remote-Debugging gestartet werden:
 
 ```bash
-# Beispiel: Antigravity mit CDP auf Port 9222 starten
-antigravity --remote-debugging-port=9222
+# Beispiel: Antigravity mit CDP auf Port 8765 starten
+antigravity --remote-debugging-port=8765
 ```
 
 ### Bot starten
@@ -87,7 +87,7 @@ npm run dev
 ### Admin-Workflow
 
 ```
-1. Instanz registrieren:        /instance add name:mein-ag port:9222
+1. Instanz registrieren:        /instance add name:mein-ag port:8765
 2. User für Instanz freischalten: /permit grant user:@Max instance:mein-ag
 3. Commands freischalten:        /command-access grant user:@Max command:ask
 4. Oder alle Commands auf einmal: /command-access grant-all user:@Max
