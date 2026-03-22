@@ -155,46 +155,64 @@ class AntigravityManager {
           const textbox = inputBox.querySelector('[role="textbox"]');
           if (!textbox) return 'ERROR:Chat textbox not found inside agent panel.';
 
-          // Focus and clear (use textContent to avoid Trusted Types CSP)
+          // Focus the textbox
           textbox.focus();
-          textbox.textContent = '';
-          while (textbox.firstChild) textbox.removeChild(textbox.firstChild);
 
-          // Set the message
-          textbox.textContent = ${escapedMessage};
+          // Clear existing content using Selection API (avoids Trusted Types)
+          const selection = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(textbox);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          document.execCommand('delete', false);
 
-          // Trigger input events
-          textbox.dispatchEvent(new Event('input', { bubbles: true }));
-          textbox.dispatchEvent(new Event('change', { bubbles: true }));
+          // Insert text using execCommand - this triggers React state updates
+          document.execCommand('insertText', false, ${escapedMessage});
+
+          // Verify text was actually inserted
+          await new Promise(r => setTimeout(r, 200));
+          const currentText = textbox.textContent || textbox.innerText || '';
+          if (currentText.trim().length === 0) {
+            return 'ERROR:Text insertion failed - textbox is still empty after execCommand';
+          }
 
           await new Promise(r => setTimeout(r, 300));
 
-          // Try to find and click the send button
+          // Submit via Enter key (most reliable for chat inputs)
+          const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true,
+          });
+          const wasHandled = !textbox.dispatchEvent(enterEvent);
+
+          if (wasHandled) {
+            return 'OK:enter (preventDefault called)';
+          }
+
+          // If Enter wasn't handled, try clicking a send button
           const btns = inputBox.querySelectorAll('button');
           let sendBtn = null;
           for (const btn of btns) {
             const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-            if (label.includes('send') || label.includes('submit')) {
+            const title = (btn.getAttribute('title') || '').toLowerCase();
+            if (label.includes('send') || label.includes('submit') || title.includes('send')) {
               sendBtn = btn;
               break;
             }
           }
-
-          // Fallback: look for a button with a send icon (typically the last button)
           if (!sendBtn && btns.length > 0) {
             sendBtn = btns[btns.length - 1];
           }
-
           if (sendBtn) {
             sendBtn.click();
             return 'OK:button';
           }
 
-          // Fallback: Enter key
-          textbox.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true
-          }));
-          return 'OK:enter';
+          return 'OK:enter (no handler)';
         })()
       `);
 
