@@ -25,11 +25,18 @@ Sende eine Nachricht an eine Antigravity KI-Instanz:
 Du kannst dein bevorzugtes KI-Modell festlegen:
 
 ```
-/model set model:gemini-2.5-pro     → Dein Standard-Modell festlegen
+/model set model:...                → Modell aus der Liste wählen
 /model info                         → Dein aktuelles Modell anzeigen
-/model list                         → Gängige Modelle anzeigen
-/model list instance:mein-ag        → Modelle einer Instanz anzeigen
+/model list                         → Alle verfügbaren Modelle anzeigen
 ```
+
+Verfügbare Modelle:
+- Gemini 3.1 Pro (High)
+- Gemini 3.1 Pro (Low)
+- Gemini 3 Flash
+- Claude Sonnet 4.6 (Thinking)
+- Claude Opus 4.6 (Thinking)
+- GPT-OSS 120B (Medium)
 
 > **Hinweis:** Der Admin kann Modelle für dich sperren oder ein bestimmtes Modell erzwingen.
 
@@ -38,8 +45,10 @@ Du kannst dein bevorzugtes KI-Modell festlegen:
 Du kannst `.md`-Dateien (Markdown) anzeigen lassen:
 
 ```
-/files list                → Alle .md Dateien auflisten
-/files view path:README.md → Eine bestimmte Datei anzeigen
+/files listmds             → Alle .md Dateien auflisten
+/files tree                → Dateibaum des Projektes anzeigen
+/files tree path:/pfad     → Dateibaum eines bestimmten Pfades
+/files view path:README.md → Eine .md Datei anzeigen
 ```
 
 ## 📡 Status – `/status`

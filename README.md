@@ -110,10 +110,11 @@ npm run dev
 | Command | Beschreibung |
 |---------|-------------|
 | `/ask <message> [instance]` | Nachricht an Antigravity senden |
-| `/model set <model>` | Standard-Modell festlegen |
+| `/model set <model>` | Standard-Modell aus Liste wählen |
 | `/model info` | Aktuelles Modell anzeigen |
-| `/model list [instance]` | Verfügbare Modelle auflisten |
-| `/files list [directory]` | `.md` Dateien auflisten |
+| `/model list` | Alle verfügbaren Modelle anzeigen |
+| `/files listmds [directory]` | `.md` Dateien auflisten |
+| `/files tree [path]` | Dateibaum anzeigen |
 | `/files view <path>` | `.md` Datei anzeigen |
 | `/status` | Instanz-Status anzeigen |
 | `/help` | Hilfe anzeigen |

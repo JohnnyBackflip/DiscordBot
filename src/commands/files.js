@@ -1,29 +1,32 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { hasInstanceAccess } = require('../permissions/permissions');
-const { stmts } = require('../database/db');
 const fs = require('fs');
 const path = require('path');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('files')
-    .setDescription('.md Dateien anzeigen')
+    .setDescription('Dateien und Verzeichnisse anzeigen')
     .addSubcommand(sub =>
-      sub.setName('list')
+      sub.setName('listmds')
         .setDescription('Alle .md Dateien auflisten')
         .addStringOption(o => o.setName('directory').setDescription('Verzeichnis (optional)').setRequired(false))
     )
     .addSubcommand(sub =>
+      sub.setName('tree')
+        .setDescription('Dateibaum des Projektes oder eines Pfades anzeigen')
+        .addStringOption(o => o.setName('path').setDescription('Pfad (optional, Standard: Projektverzeichnis)').setRequired(false))
+    )
+    .addSubcommand(sub =>
       sub.setName('view')
         .setDescription('Eine .md Datei anzeigen')
-        .addStringOption(o => o.setName('path').setDescription('Pfad zur Datei').setRequired(true))
+        .addStringOption(o => o.setName('path').setDescription('Pfad zur .md Datei').setRequired(true))
     ),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
 
     switch (sub) {
-      case 'list': {
+      case 'listmds': {
         const dir = interaction.options.getString('directory') || process.cwd();
 
         try {
@@ -54,6 +57,40 @@ module.exports = {
         }
       }
 
+      case 'tree': {
+        const targetPath = interaction.options.getString('path') || process.cwd();
+        const resolvedPath = path.resolve(targetPath);
+
+        try {
+          const tree = buildTree(resolvedPath, '', 0, 3);
+
+          if (!tree) {
+            return interaction.reply({ content: '📭 Verzeichnis ist leer oder nicht lesbar.', ephemeral: true });
+          }
+
+          // Truncate for Discord embed (max 4096 chars)
+          const header = `📂 ${path.basename(resolvedPath)}/\n`;
+          const maxLen = 4000 - header.length;
+          const truncated = tree.length > maxLen
+            ? tree.substring(0, maxLen) + '\n... *(gekürzt)*'
+            : tree;
+
+          const embed = new EmbedBuilder()
+            .setColor(0x7C3AED)
+            .setTitle('🗂️ Dateibaum')
+            .setDescription('```\n' + header + truncated + '\n```')
+            .setFooter({ text: resolvedPath })
+            .setTimestamp();
+
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (err) {
+          return interaction.reply({
+            content: `❌ Fehler beim Lesen des Verzeichnisses: ${err.message}`,
+            ephemeral: true,
+          });
+        }
+      }
+
       case 'view': {
         const filePath = interaction.options.getString('path');
 
@@ -64,11 +101,6 @@ module.exports = {
 
         // Resolve path (handle relative paths)
         const resolvedPath = path.resolve(filePath);
-
-        // Block directory traversal
-        if (resolvedPath.includes('..')) {
-          return interaction.reply({ content: '🚫 Ungültiger Pfad.', ephemeral: true });
-        }
 
         try {
           const content = fs.readFileSync(resolvedPath, 'utf-8');
@@ -118,4 +150,48 @@ function findMdFiles(dir, depth = 0, maxDepth = 3) {
   } catch (_) { /* permission errors etc. */ }
 
   return results;
+}
+
+/**
+ * Build a tree representation of a directory.
+ */
+function buildTree(dir, prefix = '', depth = 0, maxDepth = 3) {
+  if (depth > maxDepth) return prefix + '...\n';
+
+  let result = '';
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
+      .sort((a, b) => {
+        // Directories first, then files
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const isLast = i === entries.length - 1;
+      const connector = isLast ? '└── ' : '├── ';
+      const childPrefix = isLast ? '    ' : '│   ';
+
+      if (entry.isDirectory()) {
+        result += prefix + connector + '📁 ' + entry.name + '/\n';
+        result += buildTree(
+          path.join(dir, entry.name),
+          prefix + childPrefix,
+          depth + 1,
+          maxDepth
+        );
+      } else {
+        const icon = entry.name.endsWith('.md') ? '📄' :
+                     entry.name.endsWith('.js') ? '📜' :
+                     entry.name.endsWith('.json') ? '📋' :
+                     entry.name.endsWith('.txt') ? '📝' : '📎';
+        result += prefix + connector + icon + ' ' + entry.name + '\n';
+      }
+    }
+  } catch (_) { /* permission errors */ }
+
+  return result;
 }
