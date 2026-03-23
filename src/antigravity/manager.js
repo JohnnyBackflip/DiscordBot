@@ -279,10 +279,18 @@ class AntigravityManager {
           const userMsg = ${escapedUserMsg};
           let newText = '';
 
-          // Prefer boundary extraction via user message (safe against layout reflows shifting length)
-          if (userMsg && fullText.includes(userMsg)) {
-            const idx = fullText.lastIndexOf(userMsg);
-            newText = fullText.substring(idx + userMsg.length).trim();
+          // Prefer boundary extraction via user message
+          // We search forward starting from near the initial snapshot length
+          // to find EXACTLY the injected user message, preventing later repetitions from clipping Text.
+          if (userMsg && fullText.length > 0) {
+            const searchStart = Math.max(0, ${initLen} - 100);
+            const idx = fullText.indexOf(userMsg, searchStart);
+            if (idx !== -1) {
+              newText = fullText.substring(idx + userMsg.length).trim();
+            } else {
+              if (fullText.length <= ${initLen}) return 'WAITING:no new content';
+              newText = fullText.substring(${initLen}).trim();
+            }
           } else {
             // Fallback to initial length slice
             if (fullText.length <= ${initLen}) return 'WAITING:no new content';
@@ -331,9 +339,12 @@ class AntigravityManager {
                     
                     const fullText = sc.innerText || sc.textContent || '';
                     const userMsg = ${escapedUserMsg};
-                    if (userMsg && fullText.includes(userMsg)) {
-                      const idx = fullText.lastIndexOf(userMsg);
-                      return fullText.substring(idx + userMsg.length).trim();
+                    if (userMsg && fullText.length > 0) {
+                      const searchStart = Math.max(0, ${initLen} - 100);
+                      const idx = fullText.indexOf(userMsg, searchStart);
+                      if (idx !== -1) {
+                        return fullText.substring(idx + userMsg.length).trim();
+                      }
                     }
                     return fullText.substring(${initLen}).trim();
                   })()
@@ -430,22 +441,13 @@ class AntigravityManager {
     cleaned = cleaned.replace(/I'm now prioritizing the most useful tools available to complete the next steps\\. I am assessing which tools will provide the most efficient path forward\\. I'm focusing on their respective strengths to solve the particular requirements\\./gi, '');
 
     // Remove "Thinking..." standalone lines
-    cleaned = cleaned.replace(/^\s*Thinking\.{0,3}\s*$/gim, '');
+    cleaned = cleaned.replace(/^\\s*Thinking\\.{0,3}\\s*$/gim, '');
 
     // Remove "Ran command" / "Ran background command" tool output headers
-    cleaned = cleaned.replace(/^\s*Ran\s+(background\s+)?command\s*$/gim, '');
-
-    // If the snapshot caught the user's message itself right before the bot replied
-    // (e.g. "st.\nCopy\nhallo"), strip it out from the beginning
-    if (userMessage && typeof userMessage === 'string') {
-      const escapedMsg = userMessage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Matches anything at the very start up to and including the exact user message
-      const prefixRegex = new RegExp(`^[\\s\\S]{0,100}?${escapedMsg}\\s*`, 'i');
-      cleaned = cleaned.replace(prefixRegex, '');
-    }
+    cleaned = cleaned.replace(/^\\s*Ran\\s+(background\\s+)?command\\s*$/gim, '');
 
     // Secondary pass for trailing "Copy" that might be left
-    cleaned = cleaned.replace(/^\s*Copy\s*$/gim, '');
+    cleaned = cleaned.replace(/^\\s*Copy\\s*$/gim, '');
 
     // Remove duplicate blank lines
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
