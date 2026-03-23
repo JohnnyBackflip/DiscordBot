@@ -226,7 +226,7 @@ class AntigravityManager {
       console.log(`[CDP] Message sent to "${instanceName}" via ${step3}`);
 
       // Wait for the response (10 min timeout)
-      const response = await this._waitForResponse(client, 600000, 2000, onProgress);
+      const response = await this._waitForResponse(client, 600000, 2000, onProgress, message);
       return response;
 
     } catch (err) {
@@ -242,7 +242,7 @@ class AntigravityManager {
    * Snapshots the initial conversation text and returns only the NEW content (delta).
    * Filters out thinking/reasoning blocks.
    */
-  async _waitForResponse(client, timeoutMs = 600000, pollIntervalMs = 2000, onProgress = null) {
+  async _waitForResponse(client, timeoutMs = 600000, pollIntervalMs = 2000, onProgress = null, userMessage = null) {
     const startTime = Date.now();
 
     // Snapshot the initial FULL text of the conversation container
@@ -327,7 +327,7 @@ class AntigravityManager {
                     return fullText.substring(${initLen}).trim();
                   })()
                 `);
-                return this._cleanResponse(finalText || '');
+                return this._cleanResponse(finalText || '', userMessage);
               }
             } else {
               stableCount = 0;
@@ -338,7 +338,7 @@ class AntigravityManager {
             if (rawText === lastResponseText) {
               stableCount++;
               if (stableCount >= 2) {
-                return this._cleanResponse(rawText);
+                return this._cleanResponse(rawText, userMessage);
               }
             } else {
               stableCount = 0;
@@ -378,27 +378,44 @@ class AntigravityManager {
   /**
    * Clean up an AI response by removing thinking blocks and artifacts.
    */
-  _cleanResponse(text) {
+  _cleanResponse(text, userMessage = null) {
     let cleaned = text;
 
-    // Remove "Thought for Xs" / "Thought for <1s" lines
-    cleaned = cleaned.replace(/^Thought for\s*<?[\d]*\s*s?>?\s*$/gim, '');
+    // Remove "Copy" buttons text
+    cleaned = cleaned.replace(/^Copy\s*$/gim, '');
+
+    // Note: User explicitly requested to KEEP "Thought for X s" lines!
+    // So we do NOT filter the Thought timers out anymore.
 
     // Remove thinking block titles (standalone lines)
-    cleaned = cleaned.replace(/^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing|Generating)[\w\s.]*$/gim, '');
+    cleaned = cleaned.replace(/^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing|Generating)([\w\s.]*)$/gim, '');
 
     // Remove thinking description paragraphs (lines starting with "I'm now...", "I'm currently...", etc.)
-    cleaned = cleaned.replace(/^I'?m\s+(now|currently)\s+.{0,200}$/gim, '');
+    cleaned = cleaned.replace(/^I'?m\s+(now|currently)\s+[\s\S]{0,300}?$/gim, '');
 
     // Remove lines that are just continuation of thinking ("The focus is on...", "I am thinking...")
-    cleaned = cleaned.replace(/^(The focus is|I am thinkin|It's becoming|Understanding the|I'm focusing|I'm exploring).{0,200}$/gim, '');
+    cleaned = cleaned.replace(/^(The focus is|I am thinkin|It's becoming|Understanding the|I'm focusing|I'm exploring)[\s\S]{0,300}?$/gim, '');
+    
+    // Remove the specific long boilerplate thinking block the user complained about
+    cleaned = cleaned.replace(/I'm now prioritizing the most useful tools available to complete the next steps\. I am assessing which tools will provide the most efficient path forward\. I'm focusing on their respective strengths to solve the particular requirements\./gi, '');
 
     // Remove "Thinking..." standalone lines
     cleaned = cleaned.replace(/^Thinking\.{0,3}\s*$/gim, '');
 
     // Remove "Ran command" / "Ran background command" tool output headers
-    // These are tool-use indicators that shouldn't appear in chat responses
     cleaned = cleaned.replace(/^Ran\s+(background\s+)?command\s*$/gim, '');
+
+    // If the snapshot caught the user's message itself right before the bot replied
+    // (e.g. "st.\nCopy\nhallo"), strip it out from the beginning
+    if (userMessage && typeof userMessage === 'string') {
+      const escapedMsg = userMessage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Matches anything at the very start up to and including the exact user message
+      const prefixRegex = new RegExp(`^[\\s\\S]{0,100}?${escapedMsg}\\s*`, 'i');
+      cleaned = cleaned.replace(prefixRegex, '');
+    }
+
+    // Secondary pass for trailing "Copy" that might be left
+    cleaned = cleaned.replace(/^Copy\s*$/gim, '');
 
     // Remove duplicate blank lines
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
