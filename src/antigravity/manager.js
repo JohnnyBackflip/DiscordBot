@@ -258,6 +258,7 @@ class AntigravityManager {
 
     const initLen = (initialSnapshot + '').length;
     console.log('[CDP] Initial snapshot: ' + initLen + ' chars');
+    const escapedUserMsg = JSON.stringify(userMessage || '');
 
     let lastLogTime = 0;
     let stableCount = 0;
@@ -275,15 +276,19 @@ class AntigravityManager {
           if (!scrollContainer) return 'WAITING:scroll container not found';
 
           const fullText = scrollContainer.innerText || scrollContainer.textContent || '';
-          const currentLen = fullText.length;
+          const userMsg = ${escapedUserMsg};
+          let newText = '';
 
-          // No new content yet
-          if (currentLen <= ${initLen}) {
-            return 'WAITING:no new content (' + currentLen + ' chars)';
+          // Prefer boundary extraction via user message (safe against layout reflows shifting length)
+          if (userMsg && fullText.includes(userMsg)) {
+            const idx = fullText.lastIndexOf(userMsg);
+            newText = fullText.substring(idx + userMsg.length).trim();
+          } else {
+            // Fallback to initial length slice
+            if (fullText.length <= ${initLen}) return 'WAITING:no new content';
+            newText = fullText.substring(${initLen}).trim();
           }
 
-          // Extract only the NEW text (delta from initial snapshot)
-          const newText = fullText.substring(${initLen}).trim();
           if (!newText) return 'WAITING:empty delta';
 
           // Check if still generating (be conservative with selectors)
@@ -323,7 +328,13 @@ class AntigravityManager {
                     const panel = document.querySelector('.antigravity-agent-side-panel');
                     const sc = panel?.querySelector('.h-full.overflow-y-auto');
                     if (!sc) return '';
+                    
                     const fullText = sc.innerText || sc.textContent || '';
+                    const userMsg = ${escapedUserMsg};
+                    if (userMsg && fullText.includes(userMsg)) {
+                      const idx = fullText.lastIndexOf(userMsg);
+                      return fullText.substring(idx + userMsg.length).trim();
+                    }
                     return fullText.substring(${initLen}).trim();
                   })()
                 `);
@@ -381,14 +392,14 @@ class AntigravityManager {
   _cleanResponse(text, userMessage = null) {
     let cleaned = text;
 
-    // Remove "Copy" buttons text
-    cleaned = cleaned.replace(/^Copy\s*$/gim, '');
+    // Remove "Copy" buttons text (allowing leading/trailing whitespace)
+    cleaned = cleaned.replace(/^\s*Copy\s*$/gim, '');
 
     // Note: User explicitly requested to KEEP "Thought for X s" lines!
     // So we do NOT filter the Thought timers out anymore.
 
-    // Remove thinking block titles (standalone lines)
-    cleaned = cleaned.replace(/^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing|Generating)([\w\s.]*)$/gim, '');
+    // Remove thinking block titles (standalone lines or multi-line paragraphs)
+    cleaned = cleaned.replace(/^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing|Generating)[\s\S]*?(?=\n\n|$)/gim, '');
 
     // Remove thinking description paragraphs (lines starting with "I'm now...", "I'm currently...", etc.)
     cleaned = cleaned.replace(/^I'?m\s+(now|currently)\s+[\s\S]{0,300}?$/gim, '');
@@ -400,10 +411,10 @@ class AntigravityManager {
     cleaned = cleaned.replace(/I'm now prioritizing the most useful tools available to complete the next steps\. I am assessing which tools will provide the most efficient path forward\. I'm focusing on their respective strengths to solve the particular requirements\./gi, '');
 
     // Remove "Thinking..." standalone lines
-    cleaned = cleaned.replace(/^Thinking\.{0,3}\s*$/gim, '');
+    cleaned = cleaned.replace(/^\s*Thinking\.{0,3}\s*$/gim, '');
 
     // Remove "Ran command" / "Ran background command" tool output headers
-    cleaned = cleaned.replace(/^Ran\s+(background\s+)?command\s*$/gim, '');
+    cleaned = cleaned.replace(/^\s*Ran\s+(background\s+)?command\s*$/gim, '');
 
     // If the snapshot caught the user's message itself right before the bot replied
     // (e.g. "st.\nCopy\nhallo"), strip it out from the beginning
@@ -415,7 +426,7 @@ class AntigravityManager {
     }
 
     // Secondary pass for trailing "Copy" that might be left
-    cleaned = cleaned.replace(/^Copy\s*$/gim, '');
+    cleaned = cleaned.replace(/^\s*Copy\s*$/gim, '');
 
     // Remove duplicate blank lines
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
