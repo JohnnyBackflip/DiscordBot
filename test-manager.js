@@ -1,12 +1,5 @@
 const manager = require('./src/antigravity/manager');
-
-async function test() {
-  console.log('Testing manager explicitly...');
-  const res = await manager.sendMessage('lunar-slayer', 'sage mir nochmal den inhalt von src ganz kurz');
-  console.log('\\n=== FINAL RESULT FROM MANAGER ===\\n');
-  console.log(res);
-  console.log('\\n=================================\\n');
-  process.exit(0);
-}
-
-test().catch(e => { console.error('Error:', e); process.exit(1); });
+const raw = "Thought for 2s\n\nI'm now prioritizing the most useful tools for this task. The focus is on selecting the correct tool for the job to improve efficiency. I am thinking through the best ways to integrate different tools as required. My current approach involves a step-by-step assessment of which tool is most appropriate given a specific action is needed.\n\nRefining Tool Selection\n\nI'm now refining my tool selection process based on the recently received rules. I'm focusing on avoiding cat, grep, ls, and sed when there are better options. I will proactively list and consider all potentially useful tools before making a tool call and ensure this will be a more efficient workflow. I am working on complying with the critical instruction to think and list tools first. I am trying to improve my workflow so I do not need to call the task boundary tool. I will work in conjunction to meet with those requirements as well.\n\nHallo! Hier bin ich, wie kann ich dir helfen?\n\nCopy";
+console.log('--- CLEANED ---');
+console.log(manager._cleanResponse(raw));
+console.log('---------------');

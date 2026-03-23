@@ -399,16 +399,35 @@ class AntigravityManager {
     // So we do NOT filter the Thought timers out anymore.
 
     // Remove thinking block titles (standalone lines or multi-line paragraphs)
-    cleaned = cleaned.replace(/^(Considering|Prioritizing|Evaluating|Analyzing|Assessing|Thinking|Planning|Reviewing|Processing|Generating)[\s\S]*?(?=\n\n|$)/gim, '');
+    const titles = [
+      'Considering', 'Prioritizing', 'Evaluating', 'Analyzing', 'Assessing', 
+      'Thinking', 'Planning', 'Reviewing', 'Processing', 'Generating', 'Refining',
+      'Addressing Task Boundary Issue', 'Refining Tool Selection'
+    ].join('|');
+    cleaned = cleaned.replace(new RegExp(`^(?:${titles})[\\s\\S]*?(?=\\n\\n|$)`, 'gim'), '');
 
-    // Remove thinking description paragraphs (lines starting with "I'm now...", "I'm currently...", etc.)
-    cleaned = cleaned.replace(/^I'?m\s+(now|currently)\s+[\s\S]{0,300}?$/gim, '');
-
-    // Remove lines that are just continuation of thinking ("The focus is on...", "I am thinking...")
-    cleaned = cleaned.replace(/^(The focus is|I am thinkin|It's becoming|Understanding the|I'm focusing|I'm exploring)[\s\S]{0,300}?$/gim, '');
+    // Remove thinking description paragraphs. Matches any paragraph starting with these phrases.
+    const intros = [
+      "I'?m\\s+(?:now|currently|focusing|exploring|refining)",
+      "The focus is",
+      "I am thinking",
+      "My current approach",
+      "I will(?: proactively)? list",
+      "I am working on",
+      "I am trying to",
+      "I will work in conjunction",
+      "Understanding the",
+      "I am assessing",
+      "I am evaluating"
+    ].join('|');
+    
+    // We run the replacement twice in case of consecutive matches absorbing the \\n\\n
+    const introRegex = new RegExp(`^(?:${intros})[\\s\\S]*?(?=\\n\\n|$)`, 'gim');
+    cleaned = cleaned.replace(introRegex, '');
+    cleaned = cleaned.replace(introRegex, '');
     
     // Remove the specific long boilerplate thinking block the user complained about
-    cleaned = cleaned.replace(/I'm now prioritizing the most useful tools available to complete the next steps\. I am assessing which tools will provide the most efficient path forward\. I'm focusing on their respective strengths to solve the particular requirements\./gi, '');
+    cleaned = cleaned.replace(/I'm now prioritizing the most useful tools available to complete the next steps\\. I am assessing which tools will provide the most efficient path forward\\. I'm focusing on their respective strengths to solve the particular requirements\\./gi, '');
 
     // Remove "Thinking..." standalone lines
     cleaned = cleaned.replace(/^\s*Thinking\.{0,3}\s*$/gim, '');
