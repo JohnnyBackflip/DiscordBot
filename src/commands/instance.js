@@ -33,6 +33,17 @@ module.exports = {
       sub.setName('disconnect')
         .setDescription('Verbindung zu einer Instanz trennen')
         .addStringOption(o => o.setName('name').setDescription('Name der Instanz').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('link')
+        .setDescription('Binde eine Instanz fest an einen Textkanal')
+        .addStringOption(o => o.setName('name').setDescription('Name der Instanz').setRequired(true))
+        .addChannelOption(o => o.setName('channel').setDescription('Textkanal (Standard: Aktueller Kanal)').setRequired(false))
+    )
+    .addSubcommand(sub =>
+      sub.setName('unlink')
+        .setDescription('Hebe die Instanz-Bindung für einen Textkanal auf')
+        .addChannelOption(o => o.setName('channel').setDescription('Textkanal (Standard: Aktueller Kanal)').setRequired(false))
     ),
 
   async execute(interaction) {
@@ -100,6 +111,32 @@ module.exports = {
         const name = interaction.options.getString('name');
         await antigravityManager.disconnect(name);
         return interaction.reply({ content: `🔴 Verbindung zu **${name}** getrennt.`, ephemeral: true });
+      }
+
+      case 'link': {
+        const name = interaction.options.getString('name');
+        const channel = interaction.options.getChannel('channel') || interaction.channel;
+        
+        // Ensure instance exists
+        const instance = stmts.getInstance.get(name);
+        if (!instance) {
+          return interaction.reply({ content: `🚫 Instanz **${name}** existiert nicht.`, ephemeral: true });
+        }
+
+        stmts.setChannelInstance.run(channel.id, name, interaction.user.id);
+        return interaction.reply({
+          content: `🔗 Kanal <#${channel.id}> ist nun fest an die Instanz **${name}** gebunden.`,
+          ephemeral: true,
+        });
+      }
+
+      case 'unlink': {
+        const channel = interaction.options.getChannel('channel') || interaction.channel;
+        stmts.removeChannelInstance.run(channel.id);
+        return interaction.reply({
+          content: `🔗 Bindung für Kanal <#${channel.id}> wurde aufgehoben.`,
+          ephemeral: true,
+        });
       }
     }
   },

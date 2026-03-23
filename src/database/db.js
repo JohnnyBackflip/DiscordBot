@@ -52,6 +52,14 @@ db.exec(`
     set_by    TEXT NOT NULL,
     PRIMARY KEY (user_id, model, type)
   );
+
+  CREATE TABLE IF NOT EXISTS channel_instances (
+    channel_id    TEXT PRIMARY KEY,
+    instance_name TEXT NOT NULL,
+    set_by        TEXT NOT NULL,
+    set_at        TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (instance_name) REFERENCES instances(name) ON DELETE CASCADE
+  );
 `);
 
 // ─── Instance Helpers ──────────────────────────────────────────────────────────
@@ -121,6 +129,20 @@ const stmts = {
   ),
   getLockedModel: db.prepare(
     `SELECT model FROM model_restrictions WHERE user_id = ? AND type = 'lock' LIMIT 1`
+  ),
+
+  // Channel instances
+  setChannelInstance: db.prepare(
+    `INSERT OR REPLACE INTO channel_instances (channel_id, instance_name, set_by) VALUES (?, ?, ?)`
+  ),
+  removeChannelInstance: db.prepare(
+    `DELETE FROM channel_instances WHERE channel_id = ?`
+  ),
+  getChannelInstance: db.prepare(
+    `SELECT instance_name FROM channel_instances WHERE channel_id = ?`
+  ),
+  listChannelInstances: db.prepare(
+    `SELECT * FROM channel_instances`
   ),
 };
 

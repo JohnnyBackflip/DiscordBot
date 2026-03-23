@@ -23,7 +23,15 @@ module.exports = {
     const message = interaction.options.getString('message');
     let instanceName = interaction.options.getString('instance');
 
-    // If no instance specified, use the first one the user has access to
+    // If no instance specified, prioritize the channel-bound instance
+    if (!instanceName && interaction.channelId) {
+      const channelBind = stmts.getChannelInstance.get(interaction.channelId);
+      if (channelBind && channelBind.instance_name) {
+        instanceName = channelBind.instance_name;
+      }
+    }
+
+    // If still no instance specified, use the first one the user has access to
     if (!instanceName) {
       let availableInstances;
 

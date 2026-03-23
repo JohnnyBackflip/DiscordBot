@@ -71,6 +71,8 @@ class AntigravityManager {
         client,
         host: instance.host,
         port: instance.port,
+        active: true,
+        isBusy: false,
       });
 
       console.log(`[CDP] Connected to "${instanceName}" at ${instance.host}:${instance.port} (${workbench.title})`);
@@ -142,18 +144,23 @@ class AntigravityManager {
    * @param {string|null} model
    * @param {function} onProgress - Callback: (status, charCount, elapsedSec) => void
    */
-  async sendMessage(instanceName, message, model = null, onProgress = null) {
+  async sendMessage(instanceName, message, modelName = null, onProgress = null) {
     const conn = await this.getConnection(instanceName);
-    const { client } = conn;
+    if (!conn) throw new Error(`Instanz ${instanceName} ist nicht verbunden.`);
+    if (!conn.active) throw new Error(`Instanz ${instanceName} ist nicht bereit.`);
+    if (conn.isBusy) throw new Error(`Instanz ${instanceName} verarbeitet bereits eine Anfrage. Bitte warten!`);
 
+    conn.isBusy = true;
     try {
+      const client = conn.client;
+
       const escapedMessage = JSON.stringify(message);
 
       // Step 1: Focus and clear the textbox (synchronous)
       const step1 = await this._evaluate(client, `
         (() => {
           const inputBox = document.getElementById('antigravity.agentSidePanelInputBox');
-          if (!inputBox) return 'ERROR:Agent panel input box not found. Is the Agent panel open? (Ctrl+Alt+B)';
+          if (!inputBox) return 'ERROR:Agent panel input box not found. Is the Agent panel open? (Ctrl+Alt-B)';
           const textbox = inputBox.querySelector('[role="textbox"]');
           if (!textbox) return 'ERROR:Chat textbox not found inside agent panel.';
           textbox.focus();
@@ -234,6 +241,8 @@ class AntigravityManager {
         this.connections.delete(instanceName);
       }
       throw err;
+    } finally {
+      conn.isBusy = false;
     }
   }
 
